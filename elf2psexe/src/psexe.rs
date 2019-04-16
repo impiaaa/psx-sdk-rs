@@ -26,7 +26,7 @@ impl PsxWriter {
         }
     }
 
-    pub fn dump(mut self, entry: u32, mut sections: Vec<Section>) {
+    pub fn dump(mut self, entry: u32, mut sections: Vec<Section>, gp: u32) {
         // Magic
         self.write(b"PS-X EXE");
 
@@ -37,8 +37,9 @@ impl PsxWriter {
         println!("Entry PC:       0x{:08x}", entry);
         self.write32(entry);
 
-        // Initial GP, we don't use that for now
-        self.write32(0);
+        // Initial GP
+        println!("Initial GP:     0x{:08x}", gp);
+        self.write32(gp);
 
         // Sort the sections by base address since that's how we're
         // going to dump them

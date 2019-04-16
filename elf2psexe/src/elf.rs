@@ -9,6 +9,7 @@ pub struct ElfReader {
     elf: File,
     entry: u32,
     sections: Vec<Section>,
+    gp: u32
 }
 
 impl ElfReader {
@@ -23,6 +24,7 @@ impl ElfReader {
             elf: elf,
             entry: 0,
             sections: Vec::new(),
+            gp: 0
         };
 
         reader.parse();
@@ -145,6 +147,14 @@ impl ElfReader {
                 _ => None,
             }
         } else {
+            // Reginfo
+            if section_type == 0x70000006 {
+                let mut reginfo = vec![0; section_size as usize];
+                self.seek(section_offset);
+                self.read(&mut reginfo);
+                
+                self.gp = word(&reginfo[20..]);
+            }
             None
         }
     }
@@ -177,6 +187,10 @@ impl ElfReader {
 
     pub fn into_sections(self) -> Vec<Section> {
         self.sections
+    }
+    
+    pub fn gp(&self) -> u32 {
+        self.gp
     }
 }
 

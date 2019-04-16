@@ -51,9 +51,10 @@ fn main() {
     let elf = elf::ElfReader::new(Path::new(elfpath));
 
     let entry = elf.entry();
+    let gp = elf.gp();
     let sections = elf.into_sections();
 
     let psexe = psexe::PsxWriter::new(Path::new(psexepath), region);
 
-    psexe.dump(entry, sections);
+    psexe.dump(entry, sections, gp);
 }

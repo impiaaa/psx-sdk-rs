@@ -1,4 +1,4 @@
-[root]
+[[package]]
 name = "elf2psexe"
 version = "0.0.1"
 
