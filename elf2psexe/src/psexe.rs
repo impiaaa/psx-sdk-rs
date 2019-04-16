@@ -75,16 +75,25 @@ impl PsxWriter {
                 _ => panic!("No progbits section found!"),
             };
 
-        let object_size = end_addr - base;
+        let actual_object_size = end_addr - base;
         // Arbitrarily refuse object files greater than 1MB. The PSX
         // only has 2MB of RAM, most executables are a few hundred KBs
         // at most.
-        if object_size > 1 * 1024 * 1024 {
+        if actual_object_size > 1 * 1024 * 1024 {
             panic!("Object is too big");
         }
+        
+        let padded_object_size = if (actual_object_size % 2048) == 0 {
+            actual_object_size
+        } else {
+            actual_object_size + 2048 - (actual_object_size % 2048)
+        };
 
-        println!("Text+data size: {}B", object_size);
-        self.write32(object_size);
+        println!(
+            "Text+data size: {}B (actual {}B)",
+            padded_object_size, actual_object_size
+        );
+        self.write32(padded_object_size);
 
         // I don't know what the two next words do but the Nocash spec
         // says that they're "usually 0"
@@ -176,6 +185,9 @@ impl PsxWriter {
             // Update the offset
             offset = base + data.len() as u32;
         }
+        
+        let endpad = vec![0; (padded_object_size - actual_object_size) as usize];
+        self.write(&endpad);
     }
 
     fn write(&mut self, v: &[u8]) {
