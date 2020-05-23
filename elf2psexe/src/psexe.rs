@@ -101,7 +101,7 @@ impl PsxWriter {
         self.write(&[0; 8]);
 
         // Next we want to initialize the memfill
-        let mut memfill = sections.iter().filter_map(
+        let memfill = sections.iter().filter_map(
             |s| {
                 match s.contents {
                     SectionType::Memfill(len) => Some((s.base, len)),
@@ -110,26 +110,20 @@ impl PsxWriter {
             });
 
         let (memfill_base, memfill_length) =
-            match memfill.next() {
-                Some(m) => m,
-                // No memfill
-                None => (0, 0),
-            };
+            memfill.fold((0, 0), |(base, lensum), (secbase, seclen)| {
+                if base == 0 {
+                    (secbase, seclen)
+                } else if base+lensum == secbase {
+                    (base, lensum+seclen)
+                } else {
+                    panic!("Got discontiguous memfill sections!");
+                }
+            });
 
         println!("Memfill base:   0x{:08x}", memfill_base);
         self.write32(memfill_base);
         println!("Memfill length: {}B", memfill_length);
         self.write32(memfill_length);
-
-        // Make sure we don't have more than one memfill sections.
-        //
-        // XXX Technically we could handle more than one (either by
-        // merging contiguous regions or putting zeroed sections
-        // directly in the file like progbits) but I don't want to
-        // bother with that for now
-        if memfill.next().is_some() {
-            panic!("Got more than one memfill sections!");
-        }
 
         // For now hardcode SP base and offset.
         let sp     = 0x801ffff0;
