@@ -8,6 +8,16 @@ pub struct Section {
     contents: SectionType,
 }
 
+#[derive(Debug)]
+pub struct Symbol {
+    name: u32,
+    value: u32,
+    size: u32,
+    info: u8,
+    other: u8,
+    shndx: u16,
+}
+
 enum SectionType {
     /// The section's data is contained in the file
     ProgBits(Vec<u8>),
@@ -15,6 +25,9 @@ enum SectionType {
     /// file). There can be only one contiguous Memfill resion in an
     /// EXE file.
     Memfill(u32),
+    Reginfo(Vec<u8>),
+    Strtab(Vec<u8>),
+    Symtab(Vec<Symbol>)
 }
 
 #[derive(Clone, Copy)]
@@ -52,9 +65,10 @@ fn main() {
 
     let entry = elf.entry();
     let gp = elf.gp();
+    let sp = elf.stack();
     let sections = elf.into_sections();
 
     let psexe = psexe::PsxWriter::new(Path::new(psexepath), region);
 
-    psexe.dump(entry, sections, gp);
+    psexe.dump(entry, sections, gp, sp);
 }

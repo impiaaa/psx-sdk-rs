@@ -1,15 +1,26 @@
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+use std::iter::FromIterator;
 
 use Section;
 use SectionType;
+use Symbol;
 
 pub struct ElfReader {
     elf: File,
     entry: u32,
     sections: Vec<Section>,
-    gp: u32
+    gp: u32,
+    stack: u32
+}
+
+// https://stackoverflow.com/a/42067321/408060
+pub fn str_from_u8_nul_utf8(utf8_src: &[u8]) -> Result<&str, std::str::Utf8Error> {
+    let nul_range_end = utf8_src.iter()
+        .position(|&c| c == b'\0')
+        .unwrap_or(utf8_src.len()); // default to length if no `\0` present
+    ::std::str::from_utf8(&utf8_src[0..nul_range_end])
 }
 
 impl ElfReader {
@@ -24,7 +35,8 @@ impl ElfReader {
             elf: elf,
             entry: 0,
             sections: Vec::new(),
-            gp: 0
+            gp: 0,
+            stack: 0x801ffff0
         };
 
         reader.parse();
@@ -57,7 +69,7 @@ impl ElfReader {
         }
 
         if halfword(&header[16..]) != 2 {
-               panic!("Invalid ELF file: not an executable");
+            panic!("Invalid ELF file: not an executable");
         }
 
         if halfword(&header[18..]) != 8 {
@@ -95,6 +107,33 @@ impl ElfReader {
         }).is_none() {
             panic!("No progbits section found");
         }
+        
+        if let Some(maybe_gp) = self.sections.iter().filter_map(|s| {
+            match &s.contents {
+                SectionType::Reginfo(reginfo) => Some(word(&reginfo[20..])),
+                _ => None,
+            }
+        }).next() {
+            self.gp = maybe_gp
+        };
+        
+        if let Some(symtab) = self.sections.iter().filter_map(|s| {
+            match &s.contents {
+                SectionType::Symtab(v) => Some(v),
+                _ => None,
+            }
+        }).next() {
+            if let Some(strtab) = self.sections.iter().filter_map(|s| {
+                match &s.contents {
+                    SectionType::Strtab(v) => Some(v),
+                    _ => None,
+                }
+            }).next() {
+                if let Some(stack_sym) = symtab.iter().find(|s| str_from_u8_nul_utf8(&strtab[s.name as usize..]).unwrap_or("") == "__stack") {
+                    self.stack = stack_sym.value
+                }
+            }
+        };
     }
 
     fn parse_section(&mut self, header_offset: u64) -> Option<Section> {
@@ -147,15 +186,53 @@ impl ElfReader {
                 _ => None,
             }
         } else {
-            // Reginfo
-            if section_type == 0x70000006 {
-                let mut reginfo = vec![0; section_size as usize];
-                self.seek(section_offset);
-                self.read(&mut reginfo);
-                
-                self.gp = word(&reginfo[20..]);
+            match section_type {
+                // Reginfo
+                0x70000006 => {
+                    let mut reginfo = vec![0; section_size as usize];
+                    self.seek(section_offset);
+                    self.read(&mut reginfo);
+                    
+                    Some(Section {
+                        base: section_addr,
+                        contents: SectionType::Reginfo(reginfo),
+                    })
+                }
+                // Symtab
+                2 => {
+                    let mut data = vec![0; section_size as usize];
+                    self.seek(section_offset);
+                    self.read(&mut data);
+                    
+                    Some(Section {
+                        base: section_addr,
+                        contents: SectionType::Symtab(
+                            Vec::from_iter(
+                                data.chunks_exact(16).map(|ch| Symbol {
+                                    name: word(&ch[0..4]),
+                                    value: word(&ch[4..8]),
+                                    size: word(&ch[8..12]),
+                                    info: ch[12],
+                                    other: ch[13],
+                                    shndx: halfword(&ch[14..16])
+                                })
+                            )
+                        )
+                    })
+                }
+                // Strtab
+                3 => {
+                    let mut data = vec![0; section_size as usize];
+                    self.seek(section_offset);
+                    self.read(&mut data);
+                    
+                    Some(Section {
+                        base: section_addr,
+                        contents: SectionType::Strtab(data),
+                    })
+                }
+                _ => None,
             }
-            None
         }
     }
 
@@ -191,6 +268,10 @@ impl ElfReader {
     
     pub fn gp(&self) -> u32 {
         self.gp
+    }
+    
+    pub fn stack(&self) -> u32 {
+        self.stack
     }
 }
 

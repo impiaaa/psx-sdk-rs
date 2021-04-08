@@ -26,7 +26,7 @@ impl PsxWriter {
         }
     }
 
-    pub fn dump(mut self, entry: u32, mut sections: Vec<Section>, gp: u32) {
+    pub fn dump(mut self, entry: u32, mut sections: Vec<Section>, gp: u32, sp: u32) {
         // Magic
         self.write(b"PS-X EXE");
 
@@ -46,7 +46,14 @@ impl PsxWriter {
         sections.sort_by(|s1, s2| s1.base.cmp(&s2.base));
 
         // Base address
-        let base = sections[0].base;
+        let base = sections.iter().filter(
+            |s| {
+                match s.contents {
+                    SectionType::ProgBits(_) => true,
+                    _ => false
+                }
+            }
+        ).next().unwrap().base;
         println!("Base address:   0x{:08x}", base);
         self.write32(base);
 
@@ -64,7 +71,7 @@ impl PsxWriter {
                         Some(s.base + p.len() as u32),
                     // We ignore memfill sections since they take no
                     // space in the file
-                    SectionType::Memfill(_) => None,
+                    _ => None,
                 }
             })
             // We only care about the last section
@@ -116,7 +123,7 @@ impl PsxWriter {
                 } else if base+lensum == secbase {
                     (base, lensum+seclen)
                 } else {
-                    panic!("Got discontiguous memfill sections!");
+                    (base, (secbase+seclen)-base)
                 }
             });
 
@@ -125,8 +132,7 @@ impl PsxWriter {
         println!("Memfill length: {}B", memfill_length);
         self.write32(memfill_length);
 
-        // For now hardcode SP base and offset.
-        let sp     = 0x801ffff0;
+        // For now hardcode SP offset.
         let sp_off = 0;
 
         println!("SP base:        0x{:08x}", sp);
